@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "Unused files, exports and dependencies, duplication, circular imports and complexity hotspots for JavaScript and TypeScript, from Fallow.",
   "engines": {
-    "orca": ">=1.4.248"
+    "orca": ">=1.4.259"
   },
   "execution": "trusted-worker",
   "pluginApi": 1,
