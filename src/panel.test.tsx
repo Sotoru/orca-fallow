@@ -19,7 +19,13 @@ const finding = (over: Partial<Finding>): Finding => ({
   ...over
 })
 
+/** Categories start folded, as in VS Code: unfold one the way a person does. */
+const unfold = async (view: Awaited<ReturnType<typeof mount>>, label: string) => {
+  if (view.find({ label: `Show ${label}` })) await view.press({ label: `Show ${label}` })
+}
+
 const ran: Analysis = {
+  security: null,
   path: '/home/dev/apps/shop',
   version: '3.44.0',
   ranAt: 1,
@@ -59,7 +65,8 @@ test('before the first run it offers to run Fallow, then shows health and findin
   assert.ok(view.find({ text: 'A · 87.7' }))
   assert.ok(view.find({ text: '0.7%' }))
   assert.ok(view.find({ type: 'Tab', label: 'Errors (1)' }))
-  assert.ok(view.find({ text: 'Unresolved imports' }))
+  assert.ok(view.find({ text: 'Unresolved imports (1)' }))
+  assert.ok(view.find({ text: 'Unused Code' }))
   assert.ok(view.find({ text: 'Fallow 3.44.0 · 1.2s' }))
   assert.deepEqual(view.errors, [])
   assert.deepEqual(view.warnings, [])
@@ -71,6 +78,7 @@ test('severity tabs, search and a closed category narrow the list; a row opens i
   const host = mockHost({ requests: { 'fallow.last': ran, 'fallow.open': (input) => (opened.push(input), { opened: true }) } })
   const view = await mount(panel, { host })
   await view.select({ label: 'Severity' }, 'error')
+  await unfold(view, 'Unresolved imports')
   assert.ok(view.find({ text: './logo.png' }))
   assert.equal(view.find({ text: 'src/old.ts' }), null)
   await view.select({ label: 'Severity' }, 'all')
@@ -79,6 +87,7 @@ test('severity tabs, search and a closed category narrow the list; a row opens i
   await view.press({ label: 'Hide Complexity' })
   assert.equal(view.find({ text: 'Template in page.svelte' }), null)
   await view.press({ label: 'Show Complexity' })
+  assert.ok(view.find({ text: 'Template in page.svelte' }))
   await view.press({ label: 'Show actions for Template in page.svelte' })
   await view.press({ label: 'Open src/page.svelte:131' })
   assert.deepEqual(opened, [{ path: 'src/page.svelte', line: 131 }])
@@ -114,6 +123,7 @@ test('a fixable finding previews its fix, and Apply writes it and refreshes', as
   })
   const view = await mount(panel, { host })
   assert.ok(view.find({ type: 'Button', text: 'Preview fixes (1)' }))
+  await unfold(view, 'Unused exports')
   await view.press({ label: 'Preview fix: Remove the export keyword (src/greet.ts)' })
   assert.deepEqual(steps, ['plan:src/greet.ts'])
   assert.ok(view.find({ text: 'Remove export `unusedGreeting` · src/greet.ts:5' }))
@@ -204,6 +214,7 @@ test('deleting an unused file and ignoring a finding both ask first', async () =
     }
   })
   const view = await mount(panel, { host })
+  await unfold(view, 'Unused files')
   await view.press({ label: 'Show actions for src/old.ts' })
   assert.equal(view.valueOf({ label: 'Finding id' }), 'dc1:unused-file:abc')
   await view.press({ text: 'Ignore' })
@@ -251,7 +262,8 @@ test('each category and the Agent tab hand a whole list to one agent, after aski
     }
   })
   const view = await mount(panel, { host })
-  for (const t of ['Extract all with agent', 'Refactor all with agent', 'Clean up all with agent']) assert.ok(view.find({ type: 'Button', text: t }), t)
+  for (const t of ['Extract all with agent', 'Refactor all with agent']) assert.ok(view.find({ type: 'Button', text: t }), t)
+  assert.ok(view.find({ label: 'Clean up all unused files with agent' }), 'categories get it too, as an icon')
   await view.press({ text: 'Extract all with agent' })
   assert.deepEqual(batches, [], 'the first press only asks')
   assert.ok(view.find({ label: 'One agent for 2 duplicated blocks?' }))
@@ -280,5 +292,47 @@ test('every Health card row has its own agent button', async () => {
   await view.press({ label: 'Fix with agent: src/x.ts ↔ src/y.ts' })
   assert.match(prompts[0], /^Fallow reports this in the project: src\/x\.ts ↔ src\/y\.ts \(hidden change coupling\)/)
   assert.match(prompts[0], /- src\/x\.ts\n- src\/y\.ts/)
+  await view.unmount()
+})
+
+test('findings read as the VS Code sidebar: Unused Code, Duplicates, Complexity and Security Candidates', async () => {
+  const prompts: string[] = []
+  const opened: unknown[] = []
+  const security = {
+    candidates: [
+      { id: 's1', category: 'ssrf', cwe: 918, severity: 'medium', path: 'src/server/api.ts', line: 7, evidence: 'Non-literal URL passed to fetch()', trace: [{ path: 'src/server/api.ts', line: 7, endLine: null }], reachableFromUntrusted: true },
+      { id: 's2', category: 'ssrf', cwe: 918, severity: 'low', path: 'src/server/img.ts', line: 3, evidence: 'Dynamic path', trace: [], reachableFromUntrusted: false },
+      { id: 's3', category: 'path-traversal', cwe: 22, severity: 'low', path: 'src/files.ts', line: 9, evidence: 'fs.readFile with a dynamic path', trace: [], reachableFromUntrusted: false }
+    ],
+    blindSpots: { unresolvedImports: 0, unresolvedCallees: 697 }
+  }
+  const host = mockHost({
+    requests: {
+      'fallow.last': { ...ran, security },
+      'fallow.open': (i) => (opened.push(i), { opened: true }),
+      'fallow.askAgent': ({ prompt }) => (prompts.push(prompt), { started: true, focused: true, sent: true })
+    }
+  })
+  const view = await mount(panel, { host })
+  for (const t of ['Unused Code', 'Complexity', 'Security Candidates']) assert.ok(view.find({ text: t }), t)
+  assert.ok(view.find({ text: 'Unused files (1)' }))
+  assert.equal(view.find({ text: 'src/old.ts' }), null, 'categories start folded')
+  assert.ok(view.find({ text: /^ssrf \(CWE-918\) \(2\)/ }))
+  assert.ok(view.find({ text: /^path-traversal \(CWE-22\) \(1\)/ }))
+  assert.ok(view.find({ text: /^Blind spots: 0 unresolved import edges, 697 unresolved call sites/ }))
+  await view.press({ label: 'Show ssrf' })
+  assert.ok(view.find({ text: 'api.ts:7' }))
+  assert.ok(view.find({ text: /^medium · reachable from untrusted input · Non-literal URL/ }))
+  await view.press({ label: 'Open src/server/api.ts:7' })
+  assert.deepEqual(opened, [{ path: 'src/server/api.ts', line: 7 }])
+  await view.press({ label: 'Verify with agent: ssrf (CWE-918) in src/server/api.ts:7' })
+  assert.match(prompts[0], /\(security candidate to verify\)/)
+  assert.match(prompts[0], /Verify whether untrusted input really reaches this sink/)
+  await view.press({ label: 'Hide Security Candidates' })
+  assert.equal(view.find({ text: /^ssrf/ }), null)
+  await view.select({ label: 'View' }, 'agent')
+  assert.ok(view.find({ text: 'npx fallow security' }))
+  assert.deepEqual(view.warnings, [])
+  assert.deepEqual(view.errors, [])
   await view.unmount()
 })

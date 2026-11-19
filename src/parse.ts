@@ -1,6 +1,6 @@
 // Turns Fallow's JSON (`fallow --score --format json`, schema 11) into the panel's findings.
 // Fallow grows new issue types often: an unknown array still lands under "Other" instead of vanishing.
-import type { AgentItem, Analysis, BatchKind, CategoryId, Finding, Fix, FixPlan, Health, Location, Suppression } from './protocol'
+import type { AgentItem, Analysis, BatchKind, CategoryId, Finding, Fix, FixPlan, Health, Location, Security, SecurityCandidate, Suppression } from './protocol'
 
 type Json = Record<string, any>
 
@@ -175,7 +175,30 @@ export function parse(json: Json, path: string, ranAt: number): Analysis {
 
   const score = json.health?.health_score ?? json.health_score
   const health: Health | null = score ? healthOf(json.health ?? {}, score, json.dupes?.stats?.duplication_percentage ?? 0) : null
-  return { path, version: json.version ?? null, ranAt, elapsedMs: json.elapsed_ms ?? null, health, findings }
+  return { path, version: json.version ?? null, ranAt, elapsedMs: json.elapsed_ms ?? null, health, findings, security: null }
+}
+
+/** `fallow security --format json`: candidates grouped later by category, plus Fallow's blind spots. */
+export function parseSecurity(json: Json): Security {
+  const candidates: SecurityCandidate[] = ((json.security_findings ?? []) as Json[]).map((f) => ({
+    id: String(f.stable_finding_id ?? f.finding_id ?? `${f.path}:${f.line}`),
+    category: String(f.category ?? f.kind ?? 'security'),
+    cwe: typeof f.cwe === 'number' ? f.cwe : null,
+    severity: String(f.severity ?? 'medium'),
+    path: f.path,
+    line: f.line ?? null,
+    evidence: String(f.evidence ?? ''),
+    trace: ((f.reachability?.untrusted_source_trace ?? f.trace ?? []) as Json[]).map((t) => ({ path: t.path, line: t.line ?? null, endLine: null })),
+    reachableFromUntrusted: !!f.reachability?.reachable_from_untrusted_source
+  }))
+  const edges = json.unresolved_edge_files
+  return {
+    candidates,
+    blindSpots: {
+      unresolvedImports: Array.isArray(edges) ? edges.length : typeof edges === 'number' ? edges : 0,
+      unresolvedCallees: typeof json.unresolved_callee_sites === 'number' ? json.unresolved_callee_sites : (json.unresolved_callee_sites?.length ?? 0)
+    }
+  }
 }
 
 // The same names the VS Code extension and Fallow's docs use for each penalty and vital sign.
@@ -371,13 +394,22 @@ export const BATCH_COMMAND: Record<BatchKind, { command: string; task: string }>
   complexity: { command: 'npx fallow health --complexity', task: "simplify each function above Fallow's complexity limits: extract helpers, flatten nested branches, split long functions" },
   targets: { command: 'npx fallow health --targets', task: "act on each of Fallow's refactoring candidates, following its recommendation for that file" },
   hotspots: { command: 'npx fallow health --hotspots', task: 'lower the complexity of each hotspot (a file changed often and complex) so the next change is cheaper and safer' },
-  files: { command: 'npx fallow health --file-scores', task: 'raise the maintainability of the files with the lowest scores: split long functions, cut deep branching, reduce dependencies' }
+  files: { command: 'npx fallow health --file-scores', task: 'raise the maintainability of the files with the lowest scores: split long functions, cut deep branching, reduce dependencies' },
+  security: {
+    command: 'npx fallow security',
+    task: 'verify each security candidate: trace whether untrusted input really reaches the sink; fix the ones that are real (validate, encode, allowlist), and for the ones that are not, explain why without changing code'
+  }
 }
 
 /** One short prompt for a whole list: which Fallow command to run, and how to work through it. */
 export function batchPrompt(kind: BatchKind, count: number): string {
   const { command, task } = BATCH_COMMAND[kind]
-  const heuristic = kind === 'hotspots' || kind === 'targets' || kind === 'files' ? ' These rankings come from heuristics and Git history: confirm each one in the code before changing it.' : ''
+  const heuristic =
+    kind === 'security'
+      ? ' These are unverified candidates from static analysis, not confirmed vulnerabilities.'
+      : kind === 'hotspots' || kind === 'targets' || kind === 'files'
+        ? ' These rankings come from heuristics and Git history: confirm each one in the code before changing it.'
+        : ''
   const prompt = [
     `Run \`${command}\` in this project. It lists ${count} ${count === 1 ? 'item' : 'items'} to fix. Then ${task}.${heuristic}`,
     'Work through them in the order Fallow lists them. For each, make the smallest change that resolves it without changing behaviour; skip any whose fix would change behaviour, and say why.',

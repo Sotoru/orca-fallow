@@ -20,6 +20,20 @@ const f = (over: Partial<Finding>): Finding => ({
 })
 
 const ran: Analysis = {
+  security: {
+    candidates: Array.from({ length: 19 }, (_, i) => ({
+      id: `s${i}`,
+      category: ['ssrf', 'code-injection', 'dangerous-html', 'path-traversal'][i % 4],
+      cwe: [918, 94, 79, 22][i % 4],
+      severity: i % 3 ? 'low' : 'medium',
+      path: `src/lib/server/a-very-long-server-module-name-${i}.server.ts`,
+      line: 7 + i,
+      evidence: 'Fixed-origin dynamic URL at fetch. Verify the dynamic path or query encoding and destination policy. Non-literal URL passed to fetch().',
+      trace: [],
+      reachableFromUntrusted: i % 2 === 0
+    })),
+    blindSpots: { unresolvedImports: 0, unresolvedCallees: 697 }
+  },
   path: '/home/dev/apps/shop',
   version: '3.44.0',
   ranAt: 1,

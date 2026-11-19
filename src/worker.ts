@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { access, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
-import { BATCH_COMMAND, batchPrompt, parse, parseFix, PROMPT_MAX } from './parse'
+import { BATCH_COMMAND, batchPrompt, parse, parseFix, parseSecurity, PROMPT_MAX } from './parse'
 import type { Analysis, FixPlan, Suppression } from './protocol'
 
 // The version this plugin's parser was written against; npx fetches it once and caches it.
@@ -22,6 +22,7 @@ const nodeRunner: Runner = (cmd, args, cwd) =>
   })
 
 const ANALYZE = ['--score', '--format', 'json', '--quiet']
+const SECURITY = ['security', '--format', 'json', '--quiet']
 
 /** The project's own fallow when it has one (its pinned version, its config); else npx. */
 export async function command(dir: string, args: string[] = ANALYZE): Promise<[string, string[]]> {
@@ -75,20 +76,23 @@ export async function uncommitted(dir: string, paths: string[], run: Runner = no
 
 /** Runs Fallow in `dir`. Exit 1 only means "found error-level issues": the JSON is still the answer. */
 export async function analyze(dir: string, run: Runner = nodeRunner, now = Date.now): Promise<Analysis> {
-  const empty = (error: string): Analysis => ({ path: dir, version: null, ranAt: now(), elapsedMs: null, health: null, findings: [], error })
+  const empty = (error: string): Analysis => ({ path: dir, version: null, ranAt: now(), elapsedMs: null, health: null, findings: [], security: null, error })
   try {
     JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
   } catch {
     return empty('No package.json in this workspace: Fallow analyses JavaScript and TypeScript projects.')
   }
   const [cmd, args] = await command(dir)
-  const { code, stdout, stderr } = await run(cmd, args, dir)
+  // Security is a separate command; run both at once. Its failure leaves the rest of the panel intact.
+  const [main, sec] = await Promise.all([run(cmd, args, dir), command(dir, SECURITY).then(([c, a]) => run(c, a, dir))])
+  const { code, stdout, stderr } = main
   const json = jsonOf(stdout)
   if (!json) {
     const why = lastLines(stderr)
     return empty(stdout.includes('{') ? "Fallow's output could not be read." : `Fallow did not run (exit ${code})${why ? `: ${why}` : ''}`)
   }
-  return parse(json as Record<string, unknown>, dir, now())
+  const secJson = jsonOf(sec.stdout)
+  return { ...parse(json as Record<string, unknown>, dir, now()), security: secJson ? parseSecurity(secJson as Record<string, unknown>) : null }
 }
 
 const statusOf = (a: Analysis) => {
@@ -195,7 +199,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     return ws ? { id: ws.id, path: ws.path } : null
   }
 
-  const none = (error: string): Analysis => ({ path: null, version: null, ranAt: null, elapsedMs: null, health: null, findings: [], error })
+  const none = (error: string): Analysis => ({ path: null, version: null, ranAt: null, elapsedMs: null, health: null, findings: [], security: null, error })
 
   async function run(): Promise<Analysis> {
     const ws = await focused()
@@ -212,7 +216,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   orca.panels.handle('fallow.last', async () => {
     const ws = await focused()
     if (!ws) return none('No workspace is focused.')
-    return (await remembered(ws.path)) ?? { path: ws.path, version: null, ranAt: null, elapsedMs: null, health: null, findings: [] }
+    return (await remembered(ws.path)) ?? { path: ws.path, version: null, ranAt: null, elapsedMs: null, health: null, findings: [], security: null }
   })
   orca.panels.handle('fallow.run', () => run())
   orca.panels.handle('fallow.open', async ({ path }) => {

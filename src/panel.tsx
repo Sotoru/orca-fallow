@@ -30,7 +30,7 @@ import {
   type PanelContext
 } from 'orca'
 import { agentPrompt, BATCH_COMMAND, describeFix, healthItems } from './parse'
-import type { AgentItem, Analysis, BatchKind, CategoryId, Finding, FixPlan, Location } from './protocol'
+import type { AgentItem, Analysis, BatchKind, CategoryId, Finding, FixPlan, Location, Security } from './protocol'
 
 type Filter = 'all' | 'error' | 'warning' | 'info'
 type View = 'findings' | 'health' | 'agent'
@@ -49,6 +49,10 @@ const fixing = atom(false)
 const done = atom<string | null>(null)
 /** The finding whose actions are open under its row. */
 const selected = atom<string | null>(null)
+/** Categories opened in the Findings tree; all start folded, as in VS Code. */
+const openedCategories = atom<Record<string, boolean>>('openedCategories', {}, { persist: 'plugin' })
+/** Security candidate groups opened, by category. */
+const openedSecurity = atom<Record<string, boolean>>({})
 /** Clone families opened to show their copies, as the VS Code Duplicates tree does. */
 const expandedClones = atom<Record<string, boolean>>({})
 /** A destructive action waiting for its second press: `delete:<path>` or `suppress:<id>`. */
@@ -130,7 +134,8 @@ const BATCH: Record<BatchKind, { label: string; verb: string; one: string; many:
   complexity: { label: 'Complexity', verb: 'Refactor all', one: 'complex function', many: 'complex functions', icon: 'gauge' },
   targets: { label: 'Refactoring candidates', verb: 'Refactor all', one: 'refactoring candidate', many: 'refactoring candidates', icon: 'wrench' },
   hotspots: { label: 'Hotspot candidates', verb: 'Simplify all', one: 'hotspot', many: 'hotspots', icon: 'zap' },
-  files: { label: 'Least maintainable files', verb: 'Improve all', one: 'file', many: 'files', icon: 'gauge' }
+  files: { label: 'Least maintainable files', verb: 'Improve all', one: 'file', many: 'files', icon: 'gauge' },
+  security: { label: 'Security candidates', verb: 'Verify all', one: 'security candidate', many: 'security candidates', icon: 'warning' }
 }
 
 /** One agent for a whole list: it runs the Fallow command for the list and works through it. */
@@ -169,7 +174,8 @@ function AgentView(a: Analysis) {
     complexity: fromFindings('complexity'),
     targets: h?.targets.length ?? 0,
     hotspots: h?.hotspots.length ?? 0,
-    files: h?.files.length ?? 0
+    files: h?.files.length ?? 0,
+    security: a.security?.candidates.length ?? 0
   }
   const kinds = (Object.keys(BATCH) as BatchKind[]).filter((k) => counts[k] > 0)
   const waiting = read(confirming)
@@ -516,6 +522,112 @@ function FindingActions(f: Finding) {
   )
 }
 
+/**
+ * A top-level section, as in the VS Code sidebar: a bold title that folds what is under it, a
+ * count, and the one-agent button for the whole section when there is one.
+ */
+function SectionBlock({ id, title, count, batch, children }: { id: string; title: string; count: number; batch?: BatchKind; children: OrcaNode }) {
+  const isClosed = !!read(closed)[`section:${id}`]
+  const asking = !!batch && read(confirming) === `batch:${batch}`
+  return (
+    <Stack gap="sm">
+      <Row justify="between" gap="xs">
+        <Row gap="xs">
+          <IconButton
+            icon={isClosed ? 'next' : 'collapse'}
+            label={`${isClosed ? 'Show' : 'Hide'} ${title}`}
+            variant="ghost"
+            size="xs"
+            onPress={() => update(closed, (c) => ({ ...c, [`section:${id}`]: !isClosed }))}
+          />
+          <Text weight="semibold">{title}</Text>
+          <Badge>{String(count)}</Badge>
+        </Row>
+        {batch ? (
+          <Button icon="agent" size="xs" variant={asking ? 'solid' : 'ghost'} disabled={read(fixing)} onPress={() => set(confirming, asking ? null : `batch:${batch}`)}>
+            {`${BATCH[batch].verb} with agent`}
+          </Button>
+        ) : null}
+      </Row>
+      {asking ? BatchConfirm(batch!, count) : null}
+      {isClosed ? null : children}
+    </Stack>
+  )
+}
+
+const SECURITY_LABEL: Record<string, string> = {
+  ssrf: 'ssrf',
+  'dangerous-html': 'dangerous-html',
+  'code-injection': 'code-injection',
+  'path-traversal': 'path-traversal'
+}
+
+/** The VS Code "Security Candidates" view: one group per category and CWE, then Fallow's blind spots. */
+function SecuritySection(sec: Security, q: string) {
+  const cands = sec.candidates.filter((c) => !q || `${c.category} ${c.path} ${c.evidence}`.toLowerCase().includes(q))
+  const groups = [...new Set(cands.map((c) => c.category))]
+  return (
+    <Stack gap="xs">
+      {groups.map((g) => {
+        const items = cands.filter((c) => c.category === g)
+        const cwe = items[0].cwe
+        const isOpen = !!read(openedSecurity)[g] || !!q
+        return (
+          <Stack gap="xs">
+            <Row gap="xs">
+              <IconButton icon={isOpen ? 'collapse' : 'next'} label={`${isOpen ? 'Hide' : 'Show'} ${g}`} variant="ghost" size="xs" onPress={() => update(openedSecurity, (o) => ({ ...o, [g]: !isOpen }))} />
+              <IconButton icon="warning" label={`${g} security candidates`} variant="ghost" size="xs" />
+              <Box grow minWidth={0}>
+                <Text size="sm" truncate>
+                  {`${SECURITY_LABEL[g] ?? g}${cwe ? ` (CWE-${cwe})` : ''} (${items.length})`}{' '}
+                  <Text size="xs" muted>
+                    security candidates to verify
+                  </Text>
+                </Text>
+              </Box>
+            </Row>
+            {isOpen ? (
+              <Box border radius="md" direction="column">
+                {items.flatMap((c, n) => {
+                  const item: AgentItem = {
+                    title: `${g}${cwe ? ` (CWE-${cwe})` : ''} in ${c.path}${c.line ? `:${c.line}` : ''}`,
+                    kind: 'security candidate to verify',
+                    detail: c.evidence,
+                    locations: c.trace.length ? c.trace : [{ path: c.path, line: c.line, endLine: null }],
+                    advice: 'Verify whether untrusted input really reaches this sink. If it does, fix it (validate, encode, allowlist); if it does not, explain why and change nothing',
+                    docs: 'https://fallow.tools/docs/cli/security/'
+                  }
+                  return [
+                    n > 0 ? <Separator /> : null,
+                    <Box direction="row" gap="xs" align="center" paddingX="sm" paddingY="xs">
+                      <Box grow minWidth={0} gap="none">
+                        <Text size="sm" truncate>
+                          {`${c.path.split('/').pop()}${c.line ? `:${c.line}` : ''}`}
+                        </Text>
+                        <Text size="xs" muted truncate>
+                          {`${c.severity}${c.reachableFromUntrusted ? ' · reachable from untrusted input' : ''} · ${c.evidence}`}
+                        </Text>
+                      </Box>
+                      <IconButton icon="agent" label={`Verify with agent: ${item.title}`} variant="ghost" size="xs" onPress={() => askAgent(item)} />
+                      <IconButton icon="open-external" label={`Open ${c.path}${c.line ? `:${c.line}` : ''}`} variant="ghost" size="xs" onPress={() => open({ path: c.path, line: c.line })} />
+                    </Box>
+                  ]
+                })}
+              </Box>
+            ) : null}
+          </Stack>
+        )
+      })}
+      <Row gap="xs">
+        <IconButton icon="info" label="Blind spots" variant="ghost" size="xs" />
+        <Text size="xs" muted>
+          {`Blind spots: ${sec.blindSpots.unresolvedImports} unresolved import edges, ${sec.blindSpots.unresolvedCallees} unresolved call sites. Fallow cannot trace taint through these.`}
+        </Text>
+      </Row>
+    </Stack>
+  )
+}
+
 /** Findings categories that also have a one-agent list: the same button as in the Agent tab. */
 const CATEGORY_BATCH: Partial<Record<CategoryId, BatchKind>> = {
   'unresolved-imports': 'unresolved-imports',
@@ -547,32 +659,38 @@ function BatchConfirm(k: BatchKind, count: number) {
   )
 }
 
-function CategoryBlock({ id, label, findings }: { id: CategoryId; label: string; findings: Finding[] }) {
-  const isClosed = !!read(closed)[id]
+function CategoryBlock({ id, label, icon, findings }: { id: CategoryId; label: string; icon: IconName; findings: Finding[] }) {
+  // Folded until pressed, as the VS Code tree is; a search opens every category it matches in.
+  const isClosed = !read(openedCategories)[id] && !read(query).trim()
   const batch = CATEGORY_BATCH[id]
   const asking = !!batch && read(confirming) === `batch:${batch}`
   return (
-    <Stack gap="sm">
-      <Row justify="between" gap="xs">
-      <Row gap="xs">
-          <IconButton
-            icon={isClosed ? 'next' : 'collapse'}
-            label={`${isClosed ? 'Show' : 'Hide'} ${label}`}
-            variant="ghost"
-            size="xs"
-            onPress={() => update(closed, (c) => ({ ...c, [id]: !isClosed }))}
-          />
-          <Text size="xs" muted weight="medium">
-            {label}
+    <Stack gap="xs">
+      <Box direction="row" gap="xs" align="center">
+        <IconButton
+          icon={isClosed ? 'next' : 'collapse'}
+          label={`${isClosed ? 'Show' : 'Hide'} ${label}`}
+          variant="ghost"
+          size="xs"
+          onPress={() => update(openedCategories, (c) => ({ ...c, [id]: isClosed }))}
+        />
+        <IconButton icon={icon} label={label} variant="ghost" size="xs" />
+        <Box grow minWidth={0}>
+          <Text size="sm" truncate>
+            {`${label} (${findings.length})`}
           </Text>
-          <Badge>{String(findings.length)}</Badge>
-      </Row>
+        </Box>
         {batch ? (
-          <Button icon="agent" size="xs" variant={asking ? 'solid' : 'ghost'} disabled={read(fixing)} onPress={() => set(confirming, asking ? null : `batch:${batch}`)}>
-            {`${BATCH[batch].verb} with agent`}
-          </Button>
+          <IconButton
+            icon="agent"
+            label={`${BATCH[batch].verb} ${label.toLowerCase()} with agent`}
+            variant={asking ? 'solid' : 'ghost'}
+            size="xs"
+            disabled={read(fixing)}
+            onPress={() => set(confirming, asking ? null : `batch:${batch}`)}
+          />
         ) : null}
-      </Row>
+      </Box>
       {asking ? BatchConfirm(batch!, findings.length) : null}
       {isClosed ? null : (
         <Box border radius="md" direction="column">
@@ -832,6 +950,12 @@ export default function Panel() {
   )
 
   function FindingsView() {
+    const unused = CATEGORIES.filter((c) => c.id !== 'duplication' && c.id !== 'complexity')
+      .map((c) => ({ ...c, findings: shown.filter((f) => f.category === c.id) }))
+      .filter((c) => c.findings.length)
+    const clones = shown.filter((f) => f.category === 'duplication')
+    const complex = shown.filter((f) => f.category === 'complexity')
+    const secCount = a!.security ? a!.security.candidates.filter((c) => !q || `${c.category} ${c.path} ${c.evidence}`.toLowerCase().includes(q)).length : 0
     return (
       <Stack gap="md">
           <Tabs label="Severity" value={current} onChange={(v) => set(filter, v as Filter)}>
@@ -853,13 +977,46 @@ export default function Panel() {
               {working ? 'Running Fallow…' : `Fallow ${a!.version ?? ''}${a!.elapsedMs != null ? ` · ${(a!.elapsedMs / 1000).toFixed(1)}s` : ''}`}
             </Text>
           </Row>
-          {shown.length === 0 ? (
+          {shown.length === 0 && !secCount ? (
             <EmptyState icon="check" title={q ? 'No matching findings' : current === 'all' ? 'Nothing to clean up' : `No ${FILTER_LABEL[current].toLowerCase()}`} />
-          ) : (
-            CATEGORIES.map((c) => ({ ...c, findings: shown.filter((f) => f.category === c.id) }))
-              .filter((c) => c.findings.length)
-              .map((c) => CategoryBlock(c))
-          )}
+          ) : null}
+          {unused.length
+            ? SectionBlock({
+                id: 'unused',
+                title: 'Unused Code',
+                count: unused.reduce((n, c) => n + c.findings.length, 0),
+                children: <Stack gap="xs">{unused.map((c) => CategoryBlock(c))}</Stack>
+              })
+            : null}
+          {clones.length
+            ? SectionBlock({
+                id: 'duplicates',
+                title: 'Duplicates',
+                count: clones.length,
+                batch: 'duplication',
+                children: (
+                  <Box border radius="md" direction="column">
+                    {clones.flatMap((f, n) => [n > 0 ? <Separator /> : null, FindingRow(f)])}
+                  </Box>
+                )
+              })
+            : null}
+          {complex.length
+            ? SectionBlock({
+                id: 'complexity',
+                title: 'Complexity',
+                count: complex.length,
+                batch: 'complexity',
+                children: (
+                  <Box border radius="md" direction="column">
+                    {complex.flatMap((f, n) => [n > 0 ? <Separator /> : null, FindingRow(f)])}
+                  </Box>
+                )
+              })
+            : null}
+          {a!.security && secCount && current === 'all'
+            ? SectionBlock({ id: 'security', title: 'Security Candidates', count: secCount, batch: 'security', children: SecuritySection(a!.security, q) })
+            : null}
       </Stack>
     )
   }

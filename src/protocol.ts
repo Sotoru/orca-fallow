@@ -52,6 +52,7 @@ export type BatchKind =
   | 'targets'
   | 'hotspots'
   | 'files'
+  | 'security'
 
 export type Suppression = {
   /** The exact comment, e.g. `// fallow-ignore-next-line unused-export`. */
@@ -120,6 +121,28 @@ export type Health = {
   frameworks: string[]
 }
 
+/** A security candidate from `fallow security`: unverified, to check, never a confirmed flaw. */
+export type SecurityCandidate = {
+  id: string
+  /** `ssrf`, `dangerous-html`, `code-injection`, `path-traversal`… */
+  category: string
+  cwe: number | null
+  severity: string
+  path: string
+  line: number | null
+  /** Fallow's own words on what it saw and what to check. */
+  evidence: string
+  /** Source to sink, when Fallow traced one. */
+  trace: Location[]
+  reachableFromUntrusted: boolean
+}
+
+export type Security = {
+  candidates: SecurityCandidate[]
+  /** Call sites Fallow could not resolve: places its taint tracking cannot see into. */
+  blindSpots: { unresolvedImports: number; unresolvedCallees: number }
+}
+
 export type Analysis = {
   /** Workspace folder the run was for. */
   path: string | null
@@ -129,6 +152,8 @@ export type Analysis = {
   elapsedMs: number | null
   health: Health | null
   findings: Finding[]
+  /** From a second `fallow security` run; null when it did not run or failed. */
+  security: Security | null
   /** Why there is nothing to show: no workspace, no package.json, Fallow failed. */
   error?: string
 }

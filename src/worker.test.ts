@@ -310,3 +310,35 @@ test('the batch handler starts one agent and types the short prompt, writing no 
   await assert.rejects(() => worker.request('fallow.askAgentBatch', { kind: 'rm -rf' as never, count: 1 }), /Unknown list/)
   await worker.deactivate()
 })
+
+test('reads fallow security: category, CWE, evidence, the source-to-sink trace and the blind spots', async () => {
+  const { parseSecurity } = await import('./parse')
+  const sec = parseSecurity({
+    security_findings: [
+      {
+        stable_finding_id: 'sec1:680de8b54b960068',
+        kind: 'tainted-sink',
+        category: 'ssrf',
+        cwe: 918,
+        path: 'src/server/api.server.ts',
+        line: 7,
+        severity: 'medium',
+        evidence: 'Non-literal URL passed to fetch(). Candidate for verification.',
+        trace: [{ path: 'src/server/api.server.ts', line: 7, role: 'sink' }],
+        reachability: {
+          reachable_from_untrusted_source: true,
+          untrusted_source_trace: [
+            { path: 'src/server/api.check.ts', line: 45, role: 'module-source' },
+            { path: 'src/server/api.server.ts', line: 7, role: 'sink' }
+          ]
+        }
+      }
+    ],
+    unresolved_edge_files: [],
+    unresolved_callee_sites: 697
+  })
+  assert.deepEqual(sec.blindSpots, { unresolvedImports: 0, unresolvedCallees: 697 })
+  const [c] = sec.candidates
+  assert.deepEqual([c.id, c.category, c.cwe, c.severity, c.reachableFromUntrusted], ['sec1:680de8b54b960068', 'ssrf', 918, 'medium', true])
+  assert.deepEqual(c.trace.map((t) => `${t.path}:${t.line}`), ['src/server/api.check.ts:45', 'src/server/api.server.ts:7'])
+})
