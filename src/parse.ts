@@ -385,6 +385,33 @@ export function healthItems(h: Health): Record<'targets' | 'hotspots' | 'couplin
  * itself, so it always works on the current list, not on a copy taken when the button was pressed.
  */
 export const BATCH_COMMAND: Record<BatchKind, { command: string; task: string }> = {
+  all: {
+    command: 'npx fallow',
+    task: 'work through every finding it reports, starting with unresolved imports and circular dependencies, then unused code, then duplication; leave complexity and health work for last'
+  },
+  'unused-code': {
+    command: 'npx fallow dead-code',
+    task: 'clean up all of it: fix unresolved imports and cycles, remove unused exports, types, members and dependencies, and delete files that really are unused'
+  },
+  'unused-types': { command: 'npx fallow dead-code --unused-types', task: 'remove the export from each unused type, or delete the type when nothing uses it at all' },
+  'unused-members': {
+    command: 'npx fallow dead-code --unused-enum-members --unused-class-members',
+    task: 'remove each unused enum member and class member, checking first that nothing reaches it dynamically'
+  },
+  'unlisted-dependencies': {
+    command: 'npx fallow dead-code --unlisted-deps --unlisted-binaries',
+    task: 'add each package the code or a script uses but package.json does not list, as a dependency or a devDependency as it is used'
+  },
+  'duplicate-exports': { command: 'npx fallow dead-code --duplicate-exports', task: 'keep one export of each name and point every import at it' },
+  boundaries: { command: 'npx fallow dead-code --boundary-violations', task: "move each import that crosses an architecture boundary so it respects the project's zones" },
+  health: {
+    command: 'npx fallow health --complexity --hotspots --targets --file-scores',
+    task: 'raise the health score: simplify the complex functions, then act on the hotspots, the refactoring candidates and the least maintainable files'
+  },
+  coupling: {
+    command: 'npx fallow health --hotspots',
+    task: 'for each pair of files Fallow reports as changing together with no import between them, make the shared concept explicit in one module or remove the hidden dependency'
+  },
   'unused-files': { command: 'npx fallow dead-code --unused-files', task: 'delete each unused file that really is unused; keep any loaded in a way static analysis cannot see (dynamic imports, config, scripts) and say why' },
   'unused-exports': { command: 'npx fallow dead-code --unused-exports', task: 'remove the export keyword from each unused export, or delete the code when nothing uses it at all' },
   'unused-dependencies': { command: 'npx fallow dead-code --unused-deps', task: 'remove each unused dependency from package.json, then run the package manager install' },
@@ -407,7 +434,7 @@ export function batchPrompt(kind: BatchKind, count: number): string {
   const heuristic =
     kind === 'security'
       ? ' These are unverified candidates from static analysis, not confirmed vulnerabilities.'
-      : kind === 'hotspots' || kind === 'targets' || kind === 'files'
+      : kind === 'hotspots' || kind === 'targets' || kind === 'files' || kind === 'coupling' || kind === 'health'
         ? ' These rankings come from heuristics and Git history: confirm each one in the code before changing it.'
         : ''
   const prompt = [

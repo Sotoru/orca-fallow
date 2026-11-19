@@ -33,13 +33,14 @@ import { agentPrompt, BATCH_COMMAND, describeFix, healthItems } from './parse'
 import type { AgentItem, Analysis, BatchKind, CategoryId, Finding, FixPlan, Location, Security } from './protocol'
 
 type Filter = 'all' | 'error' | 'warning' | 'info'
-type View = 'findings' | 'health' | 'agent'
+type View = 'overview' | 'findings' | 'agent'
 
 const analysis = atom<Analysis | null>(null)
 const busy = atom(false)
 const query = atom('')
 const filter = atom<Filter>('filter', 'all', { persist: 'plugin' })
-const view = atom<View>('view', 'findings', { persist: 'plugin' })
+// `view2`: the old key held 'health', a tab that no longer exists.
+const view = atom<View>('view2', 'overview', { persist: 'plugin' })
 /** Categories the person closed; all start open. */
 const closed = atom<Record<string, boolean>>('closed', {}, { persist: 'plugin' })
 const failure = atom<string | null>(null)
@@ -125,6 +126,15 @@ async function act(work: () => Promise<{ analysis: Analysis }>, message: string)
 
 /** Every list one agent can work through, with how the panel names it. */
 const BATCH: Record<BatchKind, { label: string; verb: string; one: string; many: string; icon: IconName }> = {
+  all: { label: 'Everything Fallow reports', verb: 'Fix everything', one: 'finding', many: 'findings', icon: 'zap' },
+  'unused-code': { label: 'All unused code', verb: 'Clean up all', one: 'finding', many: 'findings', icon: 'delete' },
+  'unused-types': { label: 'Unused types', verb: 'Clean up all', one: 'unused type', many: 'unused types', icon: 'blocks' },
+  'unused-members': { label: 'Unused members', verb: 'Clean up all', one: 'unused member', many: 'unused members', icon: 'layers' },
+  'unlisted-dependencies': { label: 'Unlisted dependencies', verb: 'Add all', one: 'unlisted dependency', many: 'unlisted dependencies', icon: 'package' },
+  'duplicate-exports': { label: 'Duplicate exports', verb: 'Fix all', one: 'duplicate export', many: 'duplicate exports', icon: 'copy' },
+  boundaries: { label: 'Boundary violations', verb: 'Fix all', one: 'boundary violation', many: 'boundary violations', icon: 'flag' },
+  health: { label: 'All health work', verb: 'Improve all', one: 'item', many: 'items', icon: 'activity' },
+  coupling: { label: 'Hidden change coupling', verb: 'Decouple all', one: 'coupled pair', many: 'coupled pairs', icon: 'link' },
   'unresolved-imports': { label: 'Unresolved imports', verb: 'Fix all', one: 'unresolved import', many: 'unresolved imports', icon: 'error' },
   'circular-dependencies': { label: 'Circular dependencies', verb: 'Break all', one: 'cycle', many: 'cycles', icon: 'refresh' },
   'unused-files': { label: 'Unused files', verb: 'Clean up all', one: 'unused file', many: 'unused files', icon: 'file' },
@@ -164,58 +174,88 @@ function AgentView(a: Analysis) {
   const findings = a.findings
   const fromFindings = (c: CategoryId) => findings.filter((f) => f.category === c).length
   const h = a.health
+  const health = (h?.targets.length ?? 0) + (h?.hotspots.length ?? 0) + (h?.coupling.length ?? 0) + (h?.files.length ?? 0) + fromFindings('complexity')
+  const unusedCode = findings.filter((f) => f.category !== 'duplication' && f.category !== 'complexity').length
   const counts: Record<BatchKind, number> = {
+    all: findings.length,
+    'unused-code': unusedCode,
     'unresolved-imports': fromFindings('unresolved-imports'),
     'circular-dependencies': fromFindings('circular-dependencies'),
     'unused-files': fromFindings('unused-files'),
     'unused-exports': fromFindings('unused-exports'),
+    'unused-types': fromFindings('unused-types'),
     'unused-dependencies': fromFindings('unused-dependencies'),
+    'unused-members': fromFindings('unused-members'),
+    'unlisted-dependencies': fromFindings('unlisted-dependencies'),
+    'duplicate-exports': fromFindings('duplicate-exports'),
+    boundaries: fromFindings('boundaries'),
     duplication: fromFindings('duplication'),
+    health,
     complexity: fromFindings('complexity'),
     targets: h?.targets.length ?? 0,
     hotspots: h?.hotspots.length ?? 0,
+    coupling: h?.coupling.length ?? 0,
     files: h?.files.length ?? 0,
     security: a.security?.candidates.length ?? 0
   }
-  const kinds = (Object.keys(BATCH) as BatchKind[]).filter((k) => counts[k] > 0)
+  // The same groups as Findings, so each agent sits beside the list it covers.
+  const GROUPS: { title: string; kinds: BatchKind[] }[] = [
+    { title: 'Everything', kinds: ['all'] },
+    {
+      title: 'Unused Code',
+      kinds: ['unused-code', 'unresolved-imports', 'unlisted-dependencies', 'circular-dependencies', 'unused-files', 'unused-exports', 'unused-types', 'unused-dependencies', 'unused-members', 'duplicate-exports', 'boundaries']
+    },
+    { title: 'Duplicates', kinds: ['duplication'] },
+    { title: 'Health', kinds: ['health', 'complexity', 'hotspots', 'coupling', 'targets', 'files'] },
+    { title: 'Security Candidates', kinds: ['security'] }
+  ]
+  const groups = GROUPS.map((g) => ({ ...g, kinds: g.kinds.filter((k) => counts[k] > 0) })).filter((g) => g.kinds.length)
   const waiting = read(confirming)
+  const agentRow = (k: BatchKind, n: number) => {
+    const b = BATCH[k]
+    const asking = waiting === `batch:${k}`
+    return [
+      n > 0 ? <Separator /> : null,
+      <Box direction="column" gap="sm" paddingX="sm" paddingY="sm">
+        <Box direction="row" gap="xs" align="center">
+          <IconButton icon={b.icon} label={b.label} variant="ghost" size="xs" />
+          <Box grow minWidth={0} gap="none">
+            <Row gap="xs">
+              <Text weight="medium" truncate>
+                {b.label}
+              </Text>
+              <Badge>{String(counts[k])}</Badge>
+            </Row>
+            <Text size="xs" muted truncate>
+              {BATCH_COMMAND[k].command}
+            </Text>
+          </Box>
+          <Button icon="agent" size="sm" variant={asking ? 'solid' : 'outline'} disabled={read(fixing)} onPress={() => set(confirming, asking ? null : `batch:${k}`)}>
+            {b.verb}
+          </Button>
+        </Box>
+        {asking ? BatchConfirm(k, counts[k]) : null}
+      </Box>
+    ]
+  }
   return (
     <Stack gap="md">
       <Text size="xs" muted>
         Each button starts one agent in this workspace. It runs the Fallow command shown, works through every item it lists, runs your type check and tests, and does not commit.
       </Text>
-      {kinds.length === 0 ? (
+      {groups.length === 0 ? (
         <EmptyState icon="check" title="Nothing to hand to an agent" />
       ) : (
-        <Box border radius="md" direction="column">
-          {kinds.flatMap((k, n) => {
-            const b = BATCH[k]
-            const asking = waiting === `batch:${k}`
-            return [
-              n > 0 ? <Separator /> : null,
-              <Box direction="column" gap="sm" paddingX="sm" paddingY="sm">
-                <Box direction="row" gap="xs" align="center">
-                  <IconButton icon={b.icon} label={b.label} variant="ghost" size="xs" />
-                  <Box grow minWidth={0} gap="none">
-                    <Row gap="xs">
-                      <Text weight="medium" truncate>
-                        {b.label}
-                      </Text>
-                      <Badge>{String(counts[k])}</Badge>
-                    </Row>
-                    <Text size="xs" muted truncate>
-                      {BATCH_COMMAND[k].command}
-                    </Text>
-                  </Box>
-                  <Button icon="agent" size="sm" variant={asking ? 'solid' : 'outline'} disabled={read(fixing)} onPress={() => set(confirming, asking ? null : `batch:${k}`)}>
-                    {b.verb}
-                  </Button>
-                </Box>
-                {asking ? BatchConfirm(k, counts[k]) : null}
-              </Box>
-            ]
-          })}
-        </Box>
+        groups.map((g) => (
+          <Stack gap="xs">
+            <Text size="xs" muted weight="medium">
+              {g.title}
+            </Text>
+            <Box border radius="md" direction="column">
+              {g.kinds.flatMap((k, n) => agentRow(k, n))}
+            </Box>
+          </Stack>
+        ))
       )}
     </Stack>
   )
@@ -544,9 +584,14 @@ function SectionBlock({ id, title, count, batch, children }: { id: string; title
           <Badge>{String(count)}</Badge>
         </Row>
         {batch ? (
-          <Button icon="agent" size="xs" variant={asking ? 'solid' : 'ghost'} disabled={read(fixing)} onPress={() => set(confirming, asking ? null : `batch:${batch}`)}>
-            {`${BATCH[batch].verb} with agent`}
-          </Button>
+          <IconButton
+            icon="agent"
+            label={`${BATCH[batch].verb} ${title.toLowerCase()} with agent`}
+            variant={asking ? 'solid' : 'ghost'}
+            size="xs"
+            disabled={read(fixing)}
+            onPress={() => set(confirming, asking ? null : `batch:${batch}`)}
+          />
         ) : null}
       </Row>
       {asking ? BatchConfirm(batch!, count) : null}
@@ -629,14 +674,20 @@ function SecuritySection(sec: Security, q: string) {
 }
 
 /** Findings categories that also have a one-agent list: the same button as in the Agent tab. */
-const CATEGORY_BATCH: Partial<Record<CategoryId, BatchKind>> = {
+const CATEGORY_BATCH: Record<CategoryId, BatchKind> = {
   'unresolved-imports': 'unresolved-imports',
   'circular-dependencies': 'circular-dependencies',
   'unused-files': 'unused-files',
   'unused-exports': 'unused-exports',
+  'unused-types': 'unused-types',
   'unused-dependencies': 'unused-dependencies',
+  'unused-members': 'unused-members',
+  'unlisted-dependencies': 'unlisted-dependencies',
+  'duplicate-exports': 'duplicate-exports',
+  boundaries: 'boundaries',
   duplication: 'duplication',
-  complexity: 'complexity'
+  complexity: 'complexity',
+  other: 'unused-code'
 }
 
 /** The confirmation before a whole list goes to one agent: shared by the Agent tab and the categories. */
@@ -701,57 +752,17 @@ function CategoryBlock({ id, label, icon, findings }: { id: CategoryId; label: s
   )
 }
 
-/**
- * The summary strip: each cell is as wide as its content, so it never stretches across a wide
- * panel or squeezes a grade into a narrow one. Pressing it opens the Health view.
- */
-function HealthStrip(a: Analysis) {
-  if (!a.health) return null
-  const { score, grade, duplication } = a.health
-  const cell = (label: string, value: string, big = false) => (
-    <Box gap="none" shrink={false}>
-      <Text size="xs" muted>
-        {label}
-      </Text>
-      {big ? <Heading level={2}>{value}</Heading> : <Text weight="semibold">{value}</Text>}
-    </Box>
-  )
-  return (
-    <Row gap="sm" wrap>
-      <Box border radius="md" paddingX="md" paddingY="sm" direction="row" gap="md" align="center" shrink={false}>
-        {cell('Health', `${grade} · ${score.toFixed(1)}`, true)}
-        <Separator orientation="vertical" />
-        {cell('Duplicated', `${duplication.toFixed(1)}%`)}
-        <Separator orientation="vertical" />
-        {cell('Issues', String(a.findings.length))}
-      </Box>
-    </Row>
-  )
-}
 
 const GRADE_TONE: Record<string, 'success' | 'warning' | 'danger'> = { A: 'success', B: 'success', C: 'warning', D: 'warning', E: 'danger', F: 'danger' }
 
 /** Sections of the Health view, in the VS Code extension's order. */
-function HealthView(a: Analysis) {
+/**
+ * The Overview tab: the score with what it costs, the summary that used to sit above the tabs,
+ * and Fallow's vital signs. The rankings live under Findings, as the VS Code Health view's do.
+ */
+function OverviewView(a: Analysis) {
   const h = a.health!
   const groups = [...new Set(h.vitals.map((v) => v.group))]
-  const opener = (path: string, label = `Open ${path}`) => <IconButton icon="open-external" label={label} variant="ghost" size="xs" onPress={() => open({ path, line: null })} />
-  const work = healthItems(h)
-  const agentButton = (item: AgentItem) => <IconButton icon="agent" label={`Fix with agent: ${item.title}`} variant="ghost" size="xs" onPress={() => askAgent(item)} />
-  const fileRow = (path: string, detail: string, item: AgentItem) => (
-    <Box direction="row" gap="xs" align="center" paddingX="sm" paddingY="xs">
-      <Box grow minWidth={0} gap="none">
-        <Text size="sm" truncate>
-          {path}
-        </Text>
-        <Text size="xs" muted truncate>
-          {detail}
-        </Text>
-      </Box>
-      {agentButton(item)}
-      {opener(path)}
-    </Box>
-  )
   const section = (id: string, title: string, count: number | null, body: OrcaNode) => {
     const isClosed = !!read(closed)[`health:${id}`]
     return (
@@ -767,13 +778,40 @@ function HealthView(a: Analysis) {
       </Stack>
     )
   }
-  const list = (rows: OrcaNode[]) => (
-    <Box border radius="md" direction="column">
-      {rows.flatMap((r, n) => [n > 0 ? <Separator /> : null, r])}
+  const errors = a.findings.filter((f) => f.severity === 'error').length
+  const warnings = a.findings.filter((f) => f.severity === 'warning').length
+  const secCount = a.security?.candidates.length ?? null
+  // Only numbers shown nowhere else; each one jumps to where it is listed.
+  const jump = (label: string, value: number, tone: 'danger' | 'warning' | 'neutral', go: () => void) => (
+    <Box border radius="md" paddingX="sm" paddingY="xs" gap="none" grow>
+      <Row justify="between" gap="xs">
+        <Text size="xs" muted>
+          {label}
+        </Text>
+        <IconButton icon="next" label={`Show ${label.toLowerCase()} in Findings`} variant="ghost" size="xs" onPress={go} />
+      </Row>
+      <Text weight="semibold" tone={value && tone !== 'neutral' ? tone : undefined}>
+        {String(value)}
+      </Text>
     </Box>
   )
+  const toFindings = (severity: Filter) => () => {
+    set(filter, severity)
+    set(view, 'findings')
+  }
   return (
     <Stack gap="md">
+      <Row gap="sm">
+        {jump('Errors', errors, 'danger', toFindings('error'))}
+        {jump('Warnings', warnings, 'warning', toFindings('warning'))}
+        {secCount !== null
+          ? jump('Security', secCount, 'warning', () => {
+              set(filter, 'all')
+              set(view, 'findings')
+              update(closed, (c) => ({ ...c, 'section:security': false }))
+            })
+          : null}
+      </Row>
       {section(
         'score',
         'Score',
@@ -798,22 +836,91 @@ function HealthView(a: Analysis) {
         'Vital signs',
         null,
         <Grid minItemWidth="lg" gap="sm">
-          {groups.map((g) => (
+          {groups.map((g) => [g, h.vitals.filter((v) => v.group === g && v.label !== 'Duplicated')] as const).filter(([, rows]) => rows.length).map(([g, rows]) => (
             <Box border radius="md" padding="sm" gap="xs">
               <Text size="xs" muted weight="medium">
                 {g}
               </Text>
-              <KeyValue items={h.vitals.filter((v) => v.group === g).map((v) => ({ label: v.label, value: v.value, ...(v.tone && v.tone !== 'success' ? { tone: v.tone } : {}) }))} />
+              <KeyValue items={rows.map((v) => ({ label: v.label, value: v.value, ...(v.tone && v.tone !== 'success' ? { tone: v.tone } : {}) }))} />
             </Box>
           ))}
         </Grid>
       )}
-      {h.targets.length
+      <Text size="xs" muted>
+        {[h.scope, h.frameworks.length ? `frameworks: ${h.frameworks.join(', ')}` : ''].filter(Boolean).join(' · ')}
+      </Text>
+      <Text size="xs" muted>
+        Hotspots, targets and coupling are heuristics from Git history: verify before acting.
+      </Text>
+    </Stack>
+  )
+}
+
+/**
+ * The Health section of Findings: Fallow's rankings (refactoring and hotspot candidates, hidden
+ * change coupling, least maintainable files), each row with its agent button.
+ */
+function HealthRankings(a: Analysis, complex: Finding[]) {
+  const h = a.health!
+  const groups = [...new Set(h.vitals.map((v) => v.group))]
+  const opener = (path: string, label = `Open ${path}`) => <IconButton icon="open-external" label={label} variant="ghost" size="xs" onPress={() => open({ path, line: null })} />
+  const work = healthItems(h)
+  const agentButton = (item: AgentItem) => <IconButton icon="agent" label={`Fix with agent: ${item.title}`} variant="ghost" size="xs" onPress={() => askAgent(item)} />
+  const fileRow = (path: string, detail: string, item: AgentItem) => (
+    <Box direction="row" gap="xs" align="center" paddingX="sm" paddingY="xs">
+      <Box grow minWidth={0} gap="none">
+        <Text size="sm" truncate>
+          {path}
+        </Text>
+        <Text size="xs" muted truncate>
+          {detail}
+        </Text>
+      </Box>
+      {agentButton(item)}
+      {opener(path)}
+    </Box>
+  )
+  // The same folded tree rows as Unused Code's categories: closed until pressed.
+  // Icons and order of the VS Code Health view: Score, Complexity, Hotspot Candidates,
+  // Hidden Change Coupling, Refactoring Candidates; least maintainable files last.
+  const ICONS: Record<string, IconName> = { score: 'activity', complexity: 'gauge', targets: 'wrench', hotspots: 'zap', coupling: 'link', files: 'file' }
+  const BATCHES: Record<string, BatchKind | undefined> = { complexity: 'complexity', targets: 'targets', hotspots: 'hotspots', coupling: 'coupling', files: 'files' }
+  const section = (id: string, title: string, count: number | null, body: OrcaNode) => {
+    const isClosed = !read(openedCategories)[`health:${id}`]
+    const batch = BATCHES[id]
+    const asking = !!batch && read(confirming) === `batch:${batch}`
+    return (
+      <Stack gap="xs">
+        <Box direction="row" gap="xs" align="center">
+          <IconButton icon={isClosed ? 'next' : 'collapse'} label={`${isClosed ? 'Show' : 'Hide'} ${title}`} variant="ghost" size="xs" onPress={() => update(openedCategories, (c) => ({ ...c, [`health:${id}`]: isClosed }))} />
+          <IconButton icon={ICONS[id] ?? 'info'} label={title} variant="ghost" size="xs" />
+          <Box grow minWidth={0}>
+            <Text size="sm" truncate>
+              {count !== null ? `${title} (${count})` : title}
+            </Text>
+          </Box>
+          {batch ? (
+            <IconButton icon="agent" label={`${BATCH[batch].verb} ${title.toLowerCase()} with agent`} variant={asking ? 'solid' : 'ghost'} size="xs" disabled={read(fixing)} onPress={() => set(confirming, asking ? null : `batch:${batch}`)} />
+          ) : null}
+        </Box>
+        {asking ? BatchConfirm(batch!, count ?? 0) : null}
+        {isClosed ? null : body}
+      </Stack>
+    )
+  }
+  const list = (rows: OrcaNode[]) => (
+    <Box border radius="md" direction="column">
+      {rows.flatMap((r, n) => [n > 0 ? <Separator /> : null, r])}
+    </Box>
+  )
+  return (
+    <Stack gap="xs">
+      {complex.length
         ? section(
-            'targets',
-            'Refactoring candidates',
-            h.targets.length,
-            list(h.targets.map((t, i) => fileRow(t.path, `${t.recommendation} · effort ${t.effort}, confidence ${t.confidence}`, work.targets[i])))
+            'complexity',
+            'Complexity',
+            complex.length,
+            list(complex.map((f) => FindingRow(f)))
           )
         : null}
       {h.hotspots.length
@@ -855,6 +962,14 @@ function HealthView(a: Analysis) {
             )
           )
         : null}
+      {h.targets.length
+        ? section(
+            'targets',
+            'Refactoring candidates',
+            h.targets.length,
+            list(h.targets.map((t, i) => fileRow(t.path, `${t.recommendation} · effort ${t.effort}, confidence ${t.confidence}`, work.targets[i])))
+          )
+        : null}
       {h.files.length
         ? section(
             'files',
@@ -864,10 +979,7 @@ function HealthView(a: Analysis) {
           )
         : null}
       <Text size="xs" muted>
-        {[h.scope, h.frameworks.length ? `frameworks: ${h.frameworks.join(', ')}` : ''].filter(Boolean).join(' · ')}
-      </Text>
-      <Text size="xs" muted>
-        Hotspots, targets and coupling are heuristics from Git history: verify before acting.
+        Heuristics from Git history and file metrics: verify before acting.
       </Text>
     </Stack>
   )
@@ -897,6 +1009,14 @@ export default function Panel() {
         </Stack>
         <IconButton icon="refresh" label={hasRun ? 'Run again' : 'Run analysis'} variant="ghost" disabled={working} onPress={run} />
       </Row>
+      {hasRun && a?.health ? (
+        <Row gap="xs" align="center" wrap>
+          <Badge tone={GRADE_TONE[a.health.grade] ?? 'neutral'}>{`Health ${a.health.grade}`}</Badge>
+          <Text size="xs" muted>
+            {`${a.health.score.toFixed(1)} / 100 · ${a.health.duplication.toFixed(1)}% duplicated · ${plural(a.findings.length, 'issue', 'issues')}`}
+          </Text>
+        </Row>
+      ) : null}
       {failed ? (
         <Callout tone="danger" icon="error">
           <Row justify="between" gap="xs">
@@ -929,21 +1049,20 @@ export default function Panel() {
       ) : null}
       {hasRun && !a!.error ? (
         <Stack gap="md">
-          {HealthStrip(a!)}
-          <Tabs label="View" value={!a!.health && read(view) === 'health' ? 'findings' : read(view)} onChange={(v) => set(view, v as View)}>
-            <Tab value="findings" label={`Findings (${all.length})`} icon="filter">
-              {null}
-            </Tab>
+          <Tabs label="View" value={!a!.health && read(view) === 'overview' ? 'findings' : read(view)} onChange={(v) => set(view, v as View)}>
             {a!.health ? (
-              <Tab value="health" label="Health" icon="activity">
+              <Tab value="overview" label="Overview" icon="activity">
                 {null}
               </Tab>
             ) : null}
+            <Tab value="findings" label={`Findings (${all.length})`} icon="filter">
+              {null}
+            </Tab>
             <Tab value="agent" label="Agent" icon="agent">
               {null}
             </Tab>
           </Tabs>
-          {read(view) === 'agent' ? AgentView(a!) : a!.health && read(view) === 'health' ? HealthView(a!) : FindingsView()}
+          {read(view) === 'agent' ? AgentView(a!) : a!.health && read(view) === 'overview' ? OverviewView(a!) : FindingsView()}
         </Stack>
       ) : null}
     </Stack>
@@ -956,6 +1075,8 @@ export default function Panel() {
     const clones = shown.filter((f) => f.category === 'duplication')
     const complex = shown.filter((f) => f.category === 'complexity')
     const secCount = a!.security ? a!.security.candidates.filter((c) => !q || `${c.category} ${c.path} ${c.evidence}`.toLowerCase().includes(q)).length : 0
+    const h = a!.health
+    const rankings = h ? h.targets.length + h.hotspots.length + h.coupling.length + h.files.length : 0
     return (
       <Stack gap="md">
           <Tabs label="Severity" value={current} onChange={(v) => set(filter, v as Filter)}>
@@ -984,6 +1105,7 @@ export default function Panel() {
             ? SectionBlock({
                 id: 'unused',
                 title: 'Unused Code',
+                batch: 'unused-code',
                 count: unused.reduce((n, c) => n + c.findings.length, 0),
                 children: <Stack gap="xs">{unused.map((c) => CategoryBlock(c))}</Stack>
               })
@@ -1001,19 +1123,21 @@ export default function Panel() {
                 )
               })
             : null}
-          {complex.length
-            ? SectionBlock({
-                id: 'complexity',
-                title: 'Complexity',
-                count: complex.length,
-                batch: 'complexity',
-                children: (
-                  <Box border radius="md" direction="column">
-                    {complex.flatMap((f, n) => [n > 0 ? <Separator /> : null, FindingRow(f)])}
-                  </Box>
-                )
-              })
-            : null}
+          {a!.health && (complex.length || (rankings && current === 'all' && !q))
+            ? SectionBlock({ id: 'health', title: 'Health', count: complex.length + (current === 'all' && !q ? rankings : 0), batch: 'health', children: HealthRankings(a!, complex) })
+            : complex.length
+              ? SectionBlock({
+                  id: 'complexity',
+                  title: 'Complexity',
+                  count: complex.length,
+                  batch: 'complexity',
+                  children: (
+                    <Box border radius="md" direction="column">
+                      {complex.flatMap((f, n) => [n > 0 ? <Separator /> : null, FindingRow(f)])}
+                    </Box>
+                  )
+                })
+              : null}
           {a!.security && secCount && current === 'all'
             ? SectionBlock({ id: 'security', title: 'Security Candidates', count: secCount, batch: 'security', children: SecuritySection(a!.security, q) })
             : null}

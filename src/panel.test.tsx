@@ -19,6 +19,11 @@ const finding = (over: Partial<Finding>): Finding => ({
   ...over
 })
 
+/** The panel opens on Overview: go to Findings the way a person does. */
+const findingsTab = async (view: Awaited<ReturnType<typeof mount>>) => {
+  if (view.find({ label: 'View' }) && view.valueOf({ label: 'View' }) !== 'findings') await view.select({ label: 'View' }, 'findings')
+}
+
 /** Categories start folded, as in VS Code: unfold one the way a person does. */
 const unfold = async (view: Awaited<ReturnType<typeof mount>>, label: string) => {
   if (view.find({ label: `Show ${label}` })) await view.press({ label: `Show ${label}` })
@@ -59,11 +64,16 @@ test('before the first run it offers to run Fallow, then shows health and findin
     }
   })
   const view = await mount(panel, { host })
+  await findingsTab(view)
   assert.ok(view.find({ label: 'Analyse this workspace' }))
   await view.press({ text: 'Run Fallow' })
   assert.equal(runs, 1)
-  assert.ok(view.find({ text: 'A · 87.7' }))
-  assert.ok(view.find({ text: '0.7%' }))
+  assert.equal(view.valueOf({ label: 'View' }), 'overview', 'the panel opens on Overview')
+  assert.ok(view.find({ type: 'Tab', label: 'Overview' }))
+  assert.ok(view.find({ text: 'Health A' }), 'the grade sits in the header')
+  assert.ok(view.find({ text: '87.7 / 100 · 0.7% duplicated · 3 issues' }))
+  await findingsTab(view)
+  assert.ok(view.find({ text: '87.7 / 100 · 0.7% duplicated · 3 issues' }), 'and stays there on every tab')
   assert.ok(view.find({ type: 'Tab', label: 'Errors (1)' }))
   assert.ok(view.find({ text: 'Unresolved imports (1)' }))
   assert.ok(view.find({ text: 'Unused Code' }))
@@ -77,6 +87,7 @@ test('severity tabs, search and a closed category narrow the list; a row opens i
   const opened: unknown[] = []
   const host = mockHost({ requests: { 'fallow.last': ran, 'fallow.open': (input) => (opened.push(input), { opened: true }) } })
   const view = await mount(panel, { host })
+  await findingsTab(view)
   await view.select({ label: 'Severity' }, 'error')
   await unfold(view, 'Unresolved imports')
   assert.ok(view.find({ text: './logo.png' }))
@@ -84,10 +95,13 @@ test('severity tabs, search and a closed category narrow the list; a row opens i
   await view.select({ label: 'Severity' }, 'all')
   await view.type({ label: 'Search findings' }, 'template')
   assert.ok(view.find({ type: 'Tab', label: 'All (1)' }))
-  await view.press({ label: 'Hide Complexity' })
+  // Complexity sits under Health, folded like every other list there.
   assert.equal(view.find({ text: 'Template in page.svelte' }), null)
   await view.press({ label: 'Show Complexity' })
   assert.ok(view.find({ text: 'Template in page.svelte' }))
+  await view.press({ label: 'Hide Complexity' })
+  assert.equal(view.find({ text: 'Template in page.svelte' }), null)
+  await view.press({ label: 'Show Complexity' })
   await view.press({ label: 'Show actions for Template in page.svelte' })
   await view.press({ label: 'Open src/page.svelte:131' })
   assert.deepEqual(opened, [{ path: 'src/page.svelte', line: 131 }])
@@ -96,6 +110,7 @@ test('severity tabs, search and a closed category narrow the list; a row opens i
 
 test('a run posted by the status bar item updates an open panel', async () => {
   const view = await mount(panel, { host: mockHost({ requests: { 'fallow.last': { ...ran, findings: [] } } }) })
+  await findingsTab(view)
   assert.ok(view.find({ label: 'Nothing to clean up' }))
   await view.post('fallow.updated', ran)
   assert.ok(view.find({ text: '3 findings' }))
@@ -122,6 +137,7 @@ test('a fixable finding previews its fix, and Apply writes it and refreshes', as
     }
   })
   const view = await mount(panel, { host })
+  await findingsTab(view)
   assert.ok(view.find({ type: 'Button', text: 'Preview fixes (1)' }))
   await unfold(view, 'Unused exports')
   await view.press({ label: 'Preview fix: Remove the export keyword (src/greet.ts)' })
@@ -144,6 +160,7 @@ test('uncommitted changes block Apply and say why', async () => {
     }
   })
   const view = await mount(panel, { host })
+  await findingsTab(view)
   await view.press({ text: 'Preview fixes (1)' })
   assert.ok(view.find({ text: /^Commit or stash your changes first/ }))
   assert.equal(view.find({ text: /^Apply / }), null)
@@ -179,6 +196,7 @@ test('a clone expands to every copy as file:lines with its folder, each opens, a
     }
   })
   const view = await mount(panel, { host })
+  await findingsTab(view)
   assert.equal(view.find({ text: 'b.ts:72-82' }), null, 'copies start folded')
   await view.press({ label: 'Show the 2 copies of parseCsv' })
   assert.ok(view.find({ text: 'a.ts:53-63' }))
@@ -214,6 +232,7 @@ test('deleting an unused file and ignoring a finding both ask first', async () =
     }
   })
   const view = await mount(panel, { host })
+  await findingsTab(view)
   await unfold(view, 'Unused files')
   await view.press({ label: 'Show actions for src/old.ts' })
   assert.equal(view.valueOf({ label: 'Finding id' }), 'dc1:unused-file:abc')
@@ -230,21 +249,35 @@ test('deleting an unused file and ignoring a finding both ask first', async () =
   await view.unmount()
 })
 
-test('the Health tab shows score, penalties, vital signs and every ranking, each file openable', async () => {
+test('the header holds the score; Overview holds only what appears nowhere else', async () => {
   const opened: unknown[] = []
   const view = await mount(panel, { host: mockHost({ requests: { 'fallow.last': ran, 'fallow.open': (i) => (opened.push(i), { opened: true }) } }) })
-  await view.select({ label: 'View' }, 'health')
-  assert.ok(view.find({ text: 'Grade A' }))
+  assert.equal(view.valueOf({ label: 'View' }), 'overview')
+  assert.ok(view.find({ text: 'Health A' }))
   assert.equal(view.find({ type: 'Progress', label: 'Health score' })?.props.value, 87.7)
-  for (const t of ['Points taken off', 'Vital signs', 'Refactoring candidates', 'Hotspot candidates', 'Hidden change coupling', 'Least maintainable files']) assert.ok(view.find({ text: t }) ?? view.find({ label: t }), t)
+  assert.ok(view.find({ text: 'Grade A' }))
+  assert.ok(view.find({ text: '87.7 / 100' }))
+  assert.ok(view.find({ label: 'Points taken off' }))
+  assert.ok(view.find({ text: 'Vital signs' }))
+  assert.equal(view.find({ text: 'Refactoring candidates (1)' }), null, 'rankings are not in Overview')
+
+  await view.press({ label: 'Show errors in Findings' })
+  assert.equal(view.valueOf({ label: 'View' }), 'findings')
+  assert.equal(view.valueOf({ label: 'Severity' }), 'error')
+  await view.select({ label: 'Severity' }, 'all')
+  assert.ok(view.find({ text: 'Health' }))
+  for (const t of ['Refactoring candidates (1)', 'Hotspot candidates (1)', 'Hidden change coupling (1)', 'Least maintainable files (1)']) assert.ok(view.find({ text: t }), t)
+  assert.equal(view.find({ text: 'src/hot.ts' }), null, 'rankings start folded, as the categories do')
+  for (const t of ['Refactoring candidates', 'Hotspot candidates', 'Hidden change coupling', 'Least maintainable files']) await view.press({ label: `Show ${t}` })
   assert.ok(view.find({ text: /^91% degree · 5 shared commits · strong/ }))
   await view.press({ label: 'Open src/y.ts' })
   assert.deepEqual(opened, [{ path: 'src/y.ts', line: null }])
   await view.press({ label: 'Hide Hotspot candidates' })
   assert.equal(view.find({ text: 'src/hot.ts' }), null)
   await view.press({ label: 'Show Hotspot candidates' })
-  await view.select({ label: 'View' }, 'findings')
-  assert.ok(view.find({ label: 'Severity' }))
+  await view.press({ label: 'Hide Health' })
+  assert.equal(view.find({ text: 'Refactoring candidates' }), null)
+  await view.press({ label: 'Show Health' })
   assert.deepEqual(view.warnings, [])
   assert.deepEqual(view.errors, [])
   await view.unmount()
@@ -262,9 +295,12 @@ test('each category and the Agent tab hand a whole list to one agent, after aski
     }
   })
   const view = await mount(panel, { host })
-  for (const t of ['Extract all with agent', 'Refactor all with agent']) assert.ok(view.find({ type: 'Button', text: t }), t)
-  assert.ok(view.find({ label: 'Clean up all unused files with agent' }), 'categories get it too, as an icon')
-  await view.press({ text: 'Extract all with agent' })
+  await findingsTab(view)
+  // Every section and category carries the agent symbol.
+  for (const l of ['Extract all duplicates with agent', 'Clean up all unused code with agent', 'Improve all health with agent', 'Clean up all unused files with agent', 'Refactor all complexity with agent']) {
+    assert.equal(view.find({ label: l })?.props.icon, 'agent', l)
+  }
+  await view.press({ label: 'Extract all duplicates with agent' })
   assert.deepEqual(batches, [], 'the first press only asks')
   assert.ok(view.find({ label: 'One agent for 2 duplicated blocks?' }))
   assert.ok(view.find({ text: /^It runs `npx fallow dupes`/ }))
@@ -273,7 +309,10 @@ test('each category and the Agent tab hand a whole list to one agent, after aski
   assert.ok(view.find({ text: /^One agent is working through 2 duplicated blocks .* starting from `npx fallow dupes`/ }))
 
   await view.select({ label: 'View' }, 'agent')
-  for (const c of ['npx fallow dupes', 'npx fallow health --complexity', 'npx fallow dead-code --unused-files', 'npx fallow health --targets', 'npx fallow health --hotspots']) assert.ok(view.find({ text: c }), c)
+  for (const c of ['npx fallow', 'npx fallow dead-code', 'npx fallow dupes', 'npx fallow health --complexity', 'npx fallow dead-code --unused-files', 'npx fallow health --targets', 'npx fallow health --hotspots', 'npx fallow health --complexity --hotspots --targets --file-scores']) {
+    assert.ok(view.find({ text: c }), c)
+  }
+  for (const g of ['Everything', 'Unused Code', 'Duplicates', 'Health']) assert.ok(view.find({ text: g }), g)
   assert.equal(view.find({ text: 'npx fallow dead-code --circular-deps' }), null, 'an empty list gets no row')
   await view.press({ text: 'Simplify all' })
   await view.press({ text: 'Start agent' })
@@ -287,7 +326,8 @@ test('every Health card row has its own agent button', async () => {
   const prompts: string[] = []
   const host = mockHost({ requests: { 'fallow.last': ran, 'fallow.askAgent': ({ prompt }) => (prompts.push(prompt), { started: true, focused: true, sent: true }) } })
   const view = await mount(panel, { host })
-  await view.select({ label: 'View' }, 'health')
+  await findingsTab(view)
+  for (const t of ['Refactoring candidates', 'Hotspot candidates', 'Hidden change coupling', 'Least maintainable files']) await view.press({ label: `Show ${t}` })
   for (const t of ['src/big.ts', 'src/hot.ts', 'src/x.ts ↔ src/y.ts', 'src/bad.ts']) assert.ok(view.find({ label: `Fix with agent: ${t}` }), t)
   await view.press({ label: 'Fix with agent: src/x.ts ↔ src/y.ts' })
   assert.match(prompts[0], /^Fallow reports this in the project: src\/x\.ts ↔ src\/y\.ts \(hidden change coupling\)/)
@@ -295,7 +335,7 @@ test('every Health card row has its own agent button', async () => {
   await view.unmount()
 })
 
-test('findings read as the VS Code sidebar: Unused Code, Duplicates, Complexity and Security Candidates', async () => {
+test('findings read as the VS Code sidebar: Unused Code, Duplicates, Health (with Complexity) and Security Candidates', async () => {
   const prompts: string[] = []
   const opened: unknown[] = []
   const security = {
@@ -314,7 +354,13 @@ test('findings read as the VS Code sidebar: Unused Code, Duplicates, Complexity 
     }
   })
   const view = await mount(panel, { host })
-  for (const t of ['Unused Code', 'Complexity', 'Security Candidates']) assert.ok(view.find({ text: t }), t)
+  await findingsTab(view)
+  for (const t of ['Unused Code', 'Health', 'Security Candidates']) assert.ok(view.find({ text: t }), t)
+  assert.ok(view.find({ text: 'Complexity (1)' }), 'Complexity is a row of Health, as in VS Code')
+  assert.equal(view.find({ text: 'A (88)' }), null, 'the score is in the header, not repeated under Health')
+  assert.ok(view.find({ text: 'Health A' }), 'the grade badge sits in the header')
+  const order = ['Unused Code', 'Health', 'Security Candidates'].map((t) => view.find({ text: t })!.path)
+  assert.deepEqual([...order].sort(), order, 'sections follow the VS Code order')
   assert.ok(view.find({ text: 'Unused files (1)' }))
   assert.equal(view.find({ text: 'src/old.ts' }), null, 'categories start folded')
   assert.ok(view.find({ text: /^ssrf \(CWE-918\) \(2\)/ }))

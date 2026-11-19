@@ -42,11 +42,20 @@ export type AgentItem = {
 
 /** The lists one agent can work through in one go, each the output of one Fallow command. */
 export type BatchKind =
+  | 'all'
+  | 'unused-code'
   | 'unused-files'
   | 'unused-exports'
+  | 'unused-types'
   | 'unused-dependencies'
+  | 'unused-members'
+  | 'unlisted-dependencies'
+  | 'duplicate-exports'
+  | 'boundaries'
   | 'circular-dependencies'
   | 'unresolved-imports'
+  | 'health'
+  | 'coupling'
   | 'duplication'
   | 'complexity'
   | 'targets'

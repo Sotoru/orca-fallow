@@ -342,3 +342,13 @@ test('reads fallow security: category, CWE, evidence, the source-to-sink trace a
   assert.deepEqual([c.id, c.category, c.cwe, c.severity, c.reachableFromUntrusted], ['sec1:680de8b54b960068', 'ssrf', 918, 'medium', true])
   assert.deepEqual(c.trace.map((t) => `${t.path}:${t.line}`), ['src/server/api.check.ts:45', 'src/server/api.server.ts:7'])
 })
+
+test('every one-agent list names a real Fallow command', async () => {
+  const { BATCH_COMMAND, batchPrompt } = await import('./parse')
+  // The subcommands and flags `npx fallow@3.44.0 --help` lists.
+  const known = /^npx fallow(?: (?:dead-code|dupes|health|security))?(?: --(?:unused-files|unused-exports|unused-types|unused-deps|unused-enum-members|unused-class-members|unlisted-deps|unlisted-binaries|duplicate-exports|boundary-violations|circular-deps|unresolved-imports|complexity|hotspots|targets|file-scores))*$/
+  for (const [kind, { command }] of Object.entries(BATCH_COMMAND)) {
+    assert.match(command, known, kind)
+    assert.ok(batchPrompt(kind as never, 5).length < 4096, kind)
+  }
+})

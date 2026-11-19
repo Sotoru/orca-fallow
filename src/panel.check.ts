@@ -70,5 +70,5 @@ export default defineCheck({
   noWorkspace: { requests: { 'fallow.last': { ...ran, path: null, ranAt: null, health: null, findings: [], error: 'No workspace is focused.' } } },
   beforeFirstRun: { requests: { 'fallow.last': { ...ran, ranAt: null, health: null, findings: [] } } },
   ran: { requests: { 'fallow.last': ran } },
-  health: { requests: { 'fallow.last': ran }, persisted: { plugin: { view: 'health' } } }
+  findings: { requests: { 'fallow.last': ran }, persisted: { plugin: { view2: 'findings' } } }
 })
