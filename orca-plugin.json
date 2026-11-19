@@ -1,0 +1,74 @@
+{
+  "manifestVersion": 2,
+  "id": "fallow",
+  "name": "Fallow",
+  "version": "0.1.0",
+  "description": "Unused files, exports and dependencies, duplication, circular imports and complexity hotspots for JavaScript and TypeScript, from Fallow.",
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "fallow",
+        "title": "Fallow",
+        "icon": "activity",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "commands": [
+      {
+        "id": "fallow.run",
+        "title": "Fallow: Run Analysis",
+        "when": "workspace"
+      }
+    ],
+    "settings": [
+      {
+        "key": "agent",
+        "title": "Agent for \"Fix with agent\"",
+        "description": "Which agent CLI Orca starts for findings Fallow cannot fix by itself, such as duplicates and complex functions.",
+        "type": "string",
+        "default": "claude",
+        "enum": ["claude", "codex", "opencode", "gemini", "cursor", "copilot"],
+        "enumLabels": ["Claude Code", "Codex", "OpenCode", "Gemini CLI", "Cursor", "GitHub Copilot"]
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "fallow",
+        "text": "Fallow",
+        "icon": "activity",
+        "tooltip": "Fallow: press to analyse this workspace",
+        "command": "fallow.run"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "workspace:write"
+    },
+    {
+      "kind": "storage:own"
+    },
+    {
+      "kind": "agent:launch"
+    },
+    {
+      "kind": "terminal:read"
+    },
+    {
+      "kind": "terminal:send"
+    },
+    {
+      "kind": "settings:own"
+    }
+  ]
+}

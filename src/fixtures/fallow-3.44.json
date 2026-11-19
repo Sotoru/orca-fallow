@@ -1,0 +1,379 @@
+{
+ "kind": "combined",
+ "schema_version": 15,
+ "version": "3.44.0",
+ "elapsed_ms": 212,
+ "check": {
+  "schema_version": 11,
+  "version": "3.44.0",
+  "elapsed_ms": 57,
+  "total_issues": 3,
+  "entry_points": {
+   "total": 186,
+   "sources": {
+    "manual_entry": 38,
+    "package.json": 28,
+    "plugin": 120
+   }
+  },
+  "summary": {
+   "total_issues": 3,
+   "unused_files": 1,
+   "unused_exports": 0,
+   "unused_types": 0,
+   "private_type_leaks": 0,
+   "deprecated_exports_in_use": 0,
+   "unused_dependencies": 0,
+   "unused_enum_members": 0,
+   "unused_class_members": 0,
+   "unused_namespace_members": 0,
+   "unused_store_members": 0,
+   "unprovided_injects": 0,
+   "unrendered_components": 0,
+   "unused_component_props": 0,
+   "absent_component_props": 0,
+   "unused_component_emits": 0,
+   "unused_component_inputs": 0,
+   "unused_component_outputs": 0,
+   "unused_svelte_events": 0,
+   "unused_effect_layers": 0,
+   "unused_tagged_errors": 0,
+   "unproduced_catch_tags": 0,
+   "unused_server_actions": 0,
+   "unused_load_data_keys": 0,
+   "unresolved_imports": 1,
+   "unlisted_dependencies": 0,
+   "unlisted_binaries": 1,
+   "duplicate_exports": 0,
+   "duplicate_export_aliases": 0,
+   "type_only_dependencies": 0,
+   "test_only_dependencies": 0,
+   "dev_dependencies_in_production": 0,
+   "circular_dependencies": 0,
+   "re_export_cycles": 0,
+   "package_cycles": 0,
+   "boundary_violations": 0,
+   "boundary_coverage_violations": 0,
+   "boundary_call_violations": 0,
+   "policy_violations": 0,
+   "stale_suppressions": 0,
+   "unused_catalog_entries": 0,
+   "empty_catalog_groups": 0,
+   "unresolved_catalog_references": 0,
+   "unused_dependency_overrides": 0,
+   "misconfigured_dependency_overrides": 0,
+   "invalid_client_exports": 0,
+   "mixed_client_server_barrels": 0,
+   "misplaced_directives": 0,
+   "route_collisions": 0,
+   "dynamic_segment_name_conflicts": 0
+  },
+  "unused_files": [
+   {
+    "path": "src/components/card.svelte",
+    "finding_id": "dc1:unused-file:0c52ee4b549581b3",
+    "actions": [
+     {
+      "type": "delete-file",
+      "auto_fixable": false,
+      "description": "Delete this file",
+      "note": "File deletion may remove runtime functionality not visible to static analysis"
+     },
+     {
+      "type": "suppress-file",
+      "auto_fixable": false,
+      "description": "Suppress with a file-level comment at the top of the file",
+      "comment": "// fallow-ignore-file unused-file"
+     }
+    ],
+    "effective_severity": "error"
+   }
+  ],
+  "unused_exports": [],
+  "unused_types": [],
+  "private_type_leaks": [],
+  "deprecated_exports_in_use": [],
+  "unused_dependencies": [],
+  "unused_dev_dependencies": [],
+  "unused_optional_dependencies": [],
+  "unused_enum_members": [],
+  "unused_class_members": [],
+  "unresolved_imports": [
+   {
+    "path": "src/routes/home.svelte",
+    "specifier": "./logo.png",
+    "line": 149,
+    "col": 27,
+    "specifier_col": 27,
+    "finding_id": "dc1:unresolved-import:97ef419918c8aae3",
+    "actions": [
+     {
+      "type": "resolve-import",
+      "auto_fixable": false,
+      "description": "Fix the import specifier or install the missing module",
+      "note": "Verify the module path and check tsconfig paths configuration"
+     },
+     {
+      "type": "add-to-config",
+      "auto_fixable": false,
+      "description": "Add \"./logo.png\" to ignoreUnresolvedImports in fallow config",
+      "config_key": "ignoreUnresolvedImports",
+      "value": "./logo.png",
+      "value_schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json#/properties/ignoreUnresolvedImports/items"
+     },
+     {
+      "type": "suppress-line",
+      "auto_fixable": false,
+      "description": "Suppress with an inline comment above the line",
+      "comment": "// fallow-ignore-next-line unresolved-import"
+     }
+    ],
+    "effective_severity": "error"
+   }
+  ],
+  "unlisted_dependencies": [],
+  "unlisted_binaries": [
+   {
+    "binary_name": "designlint",
+    "used_in": [
+     {
+      "path": "package.json",
+      "line": 34,
+      "col": 0,
+      "script_name": "lint:design"
+     }
+    ],
+    "finding_id": "dc1:unlisted-binary:198578596b15e90b",
+    "actions": [
+     {
+      "type": "install-dependency",
+      "auto_fixable": false,
+      "description": "Add the package that provides this binary to devDependencies",
+      "note": "If the operating system or the CI image provides this binary, add it to ignoreBinaries instead"
+     },
+     {
+      "type": "add-to-config",
+      "auto_fixable": false,
+      "description": "Add \"designlint\" to ignoreBinaries in fallow config",
+      "config_key": "ignoreBinaries",
+      "value": "designlint",
+      "value_schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json#/properties/ignoreBinaries/items"
+     }
+    ],
+    "effective_severity": "warn"
+   }
+  ],
+  "duplicate_exports": [],
+  "type_only_dependencies": [],
+  "test_only_dependencies": [],
+  "dev_dependencies_in_production": [],
+  "circular_dependencies": [],
+  "re_export_cycles": [],
+  "package_cycles": [],
+  "boundary_violations": [],
+  "boundary_coverage_violations": [],
+  "boundary_call_violations": [],
+  "policy_violations": [],
+  "stale_suppressions": [],
+  "unused_catalog_entries": [],
+  "empty_catalog_groups": [],
+  "unresolved_catalog_references": [],
+  "unused_dependency_overrides": [],
+  "misconfigured_dependency_overrides": [],
+  "invalid_client_exports": [],
+  "mixed_client_server_barrels": [],
+  "misplaced_directives": [],
+  "route_collisions": [],
+  "dynamic_segment_name_conflicts": []
+ },
+ "dupes": {
+  "clone_groups": [
+   {
+    "instances": [
+     {
+      "file": "src/lib/store.svelte",
+      "start_line": 53,
+      "end_line": 63
+     },
+     {
+      "file": "src/lib/format.svelte",
+      "start_line": 72,
+      "end_line": 82
+     }
+    ],
+    "line_count": 11,
+    "fingerprint": "dup:d3542d46",
+    "actions": [
+     {
+      "type": "extract-shared",
+      "auto_fixable": false,
+      "description": "Extract duplicated code (11 lines, 2 instances) into a shared function"
+     },
+     {
+      "type": "suppress-line",
+      "auto_fixable": false,
+      "description": "Suppress with an inline comment above the duplicated code",
+      "comment": "// fallow-ignore-next-line code-duplication"
+     },
+     {
+      "type": "suppress-range",
+      "auto_fixable": false,
+      "description": "Suppress only this clone: put the start comment above the whole duplicated block or function and the end comment below it. Neighbor clones that reach into the range stop at its border",
+      "comment": "// fallow-ignore-start code-duplication -- <reason>",
+      "end_comment": "// fallow-ignore-end code-duplication"
+     }
+    ]
+   },
+   {
+    "instances": [
+     {
+      "file": "src/components/list.ts",
+      "start_line": 56,
+      "end_line": 63
+     },
+     {
+      "file": "src/lib/api.ts",
+      "start_line": 23,
+      "end_line": 30
+     },
+     {
+      "file": "src/routes/settings.ts",
+      "start_line": 71,
+      "end_line": 78
+     }
+    ],
+    "line_count": 8,
+    "fingerprint": "dup:9c08518c",
+    "actions": [
+     {
+      "type": "extract-shared",
+      "auto_fixable": false,
+      "description": "Extract duplicated code (8 lines, 3 instances) into a shared function"
+     },
+     {
+      "type": "suppress-line",
+      "auto_fixable": false,
+      "description": "Suppress with an inline comment above the duplicated code",
+      "comment": "// fallow-ignore-next-line code-duplication"
+     },
+     {
+      "type": "suppress-range",
+      "auto_fixable": false,
+      "description": "Suppress only this clone: put the start comment above the whole duplicated block or function and the end comment below it. Neighbor clones that reach into the range stop at its border",
+      "comment": "// fallow-ignore-start code-duplication -- <reason>",
+      "end_comment": "// fallow-ignore-end code-duplication"
+     }
+    ]
+   }
+  ],
+  "stats": {
+   "total_files": 244,
+   "files_with_clones": 15,
+   "total_lines": 25917,
+   "duplicated_lines": 190,
+   "total_tokens": 137921,
+   "duplicated_tokens": 820,
+   "clone_groups": 11,
+   "clone_families": 9,
+   "clone_instances": 23,
+   "duplication_percentage": 0.7331095419994599
+  }
+ },
+ "health": {
+  "health_score": {
+   "formula_version": 3,
+   "score": 87.7,
+   "grade": "A",
+   "penalties": {
+    "dead_files": 0.1,
+    "dead_exports": 0,
+    "complexity": 0,
+    "p90_complexity": 0,
+    "maintainability": 0.6,
+    "hotspots": 0,
+    "unused_deps": 0,
+    "circular_deps": 0,
+    "unit_size": 10,
+    "coupling": 1.6,
+    "duplication": 0
+   }
+  },
+  "findings": [
+   {
+    "path": "src/components/form.svelte",
+    "name": "<template>",
+    "line": 131,
+    "col": 9,
+    "cyclomatic": 23,
+    "cognitive": 42,
+    "line_count": 304,
+    "severity": "critical",
+    "actions": [
+     {
+      "type": "refactor-function",
+      "auto_fixable": false,
+      "description": "Refactor `<template>` to reduce template complexity (move a repeated or deeply nested block into a {#snippet}; fallow scores a top-level snippet as its own unit)",
+      "note": "A top-level {#snippet name(...)} becomes its own `<snippet:name>` complexity unit, so in-file extraction moves the score; splitting into a child component also works"
+     },
+     {
+      "type": "suppress-line",
+      "auto_fixable": false,
+      "description": "Suppress with an HTML comment on the line immediately preceding the reported line",
+      "comment": "<!-- fallow-ignore-next-line complexity -->",
+      "placement": "above-template-anchor-line"
+     }
+    ]
+   },
+   {
+    "path": "src/lib/date.svelte",
+    "name": "<template>",
+    "line": 181,
+    "col": 2,
+    "cyclomatic": 21,
+    "cognitive": 30,
+    "line_count": 364,
+    "severity": "high",
+    "actions": [
+     {
+      "type": "refactor-function",
+      "auto_fixable": false,
+      "description": "Refactor `<template>` to reduce template complexity (move a repeated or deeply nested block into a {#snippet}; fallow scores a top-level snippet as its own unit)",
+      "note": "A top-level {#snippet name(...)} becomes its own `<snippet:name>` complexity unit, so in-file extraction moves the score; splitting into a child component also works"
+     },
+     {
+      "type": "suppress-line",
+      "auto_fixable": false,
+      "description": "Suppress with an HTML comment on the line immediately preceding the reported line",
+      "comment": "<!-- fallow-ignore-next-line complexity -->",
+      "placement": "above-template-anchor-line"
+     }
+    ]
+   },
+   {
+    "path": "src/components/modal.svelte",
+    "name": "<template>",
+    "line": 344,
+    "col": 12,
+    "cyclomatic": 20,
+    "cognitive": 26,
+    "line_count": 378,
+    "severity": "high",
+    "actions": [
+     {
+      "type": "refactor-function",
+      "auto_fixable": false,
+      "description": "Refactor `<template>` to reduce template complexity (move a repeated or deeply nested block into a {#snippet}; fallow scores a top-level snippet as its own unit)",
+      "note": "A top-level {#snippet name(...)} becomes its own `<snippet:name>` complexity unit, so in-file extraction moves the score; splitting into a child component also works"
+     },
+     {
+      "type": "suppress-line",
+      "auto_fixable": false,
+      "description": "Suppress with an HTML comment on the line immediately preceding the reported line",
+      "comment": "<!-- fallow-ignore-next-line complexity -->",
+      "placement": "above-template-anchor-line"
+     }
+    ]
+   }
+  ]
+ }
+}
