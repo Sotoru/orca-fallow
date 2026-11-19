@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { access, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
+import { GRADE_TONE } from './grade'
 import { BATCH_COMMAND, batchPrompt, parse, parseFix, parseSecurity, PROMPT_MAX } from './parse'
 import type { Analysis, FixPlan, Suppression } from './protocol'
 
@@ -95,14 +96,21 @@ export async function analyze(dir: string, run: Runner = nodeRunner, now = Date.
   return { ...parse(json as Record<string, unknown>, dir, now()), security: secJson ? parseSecurity(secJson as Record<string, unknown>) : null }
 }
 
-const statusOf = (a: Analysis) => {
+export const statusOf = (a: Analysis) => {
   if (a.error) return { text: 'Fallow', tone: 'neutral' as const, tooltip: a.error }
   const errors = a.findings.filter((f) => f.severity === 'error').length
   const warnings = a.findings.filter((f) => f.severity === 'warning').length
   const grade = a.health ? `${a.health.grade} ${Math.round(a.health.score)}` : null
   return {
     text: [grade, `${a.findings.length} issues`].filter(Boolean).join(' · '),
-    tone: errors ? ('danger' as const) : warnings ? ('warning' as const) : ('success' as const),
+    // The colour follows the health grade; with no score it falls back to the worst finding.
+    tone: a.health
+      ? (GRADE_TONE[a.health.grade] ?? ('neutral' as const))
+      : errors
+        ? ('danger' as const)
+        : warnings
+          ? ('warning' as const)
+          : ('success' as const),
     tooltip: `Fallow: ${errors} errors, ${warnings} warnings, ${a.findings.length - errors - warnings} hints${
       a.health ? `. Health ${a.health.score.toFixed(1)} (${a.health.grade}), ${a.health.duplication.toFixed(1)}% duplicated` : ''
     }. Press to run again; the Fallow panel lists them.`

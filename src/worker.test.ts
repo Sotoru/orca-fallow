@@ -352,3 +352,13 @@ test('every one-agent list names a real Fallow command', async () => {
     assert.ok(batchPrompt(kind as never, 5).length < 4096, kind)
   }
 })
+
+test('the status bar takes the colour of the health grade, as the panel badge does', async () => {
+  const { statusOf } = await import('./worker')
+  const at = (grade: string, findings: { severity: 'error' | 'warning' | 'info' }[] = []) =>
+    statusOf({ path: '/p', version: '3.44.0', ranAt: 1, elapsedMs: 1, security: null, findings: findings as never, health: { score: 50, grade, duplication: 0 } as never })
+  assert.deepEqual(['A', 'B', 'C', 'D', 'E', 'F'].map((g) => at(g).tone), ['success', 'success', 'warning', 'warning', 'danger', 'danger'])
+  assert.equal(at('A', [{ severity: 'error' }]).tone, 'success', 'errors no longer turn a healthy project red')
+  const noScore = statusOf({ path: '/p', version: null, ranAt: 1, elapsedMs: null, security: null, health: null, findings: [{ severity: 'error' }] as never })
+  assert.equal(noScore.tone, 'danger', 'without a score, the worst finding still decides')
+})

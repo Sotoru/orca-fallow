@@ -29,6 +29,7 @@ import {
   type OrcaNode,
   type PanelContext
 } from 'orca'
+import { GRADE_TONE } from './grade'
 import { agentPrompt, BATCH_COMMAND, describeFix, healthItems } from './parse'
 import type { AgentItem, Analysis, BatchKind, CategoryId, Finding, FixPlan, Location, Security } from './protocol'
 
@@ -753,7 +754,6 @@ function CategoryBlock({ id, label, icon, findings }: { id: CategoryId; label: s
 }
 
 
-const GRADE_TONE: Record<string, 'success' | 'warning' | 'danger'> = { A: 'success', B: 'success', C: 'warning', D: 'warning', E: 'danger', F: 'danger' }
 
 /** Sections of the Health view, in the VS Code extension's order. */
 /**
@@ -837,11 +837,23 @@ function OverviewView(a: Analysis) {
         null,
         <Grid minItemWidth="lg" gap="sm">
           {groups.map((g) => [g, h.vitals.filter((v) => v.group === g && v.label !== 'Duplicated')] as const).filter(([, rows]) => rows.length).map(([g, rows]) => (
-            <Box border radius="md" padding="sm" gap="xs">
-              <Text size="xs" muted weight="medium">
+            // Three levels: the group names the card, each value is what a person reads, its label explains it.
+            <Box border radius="md" padding="sm" gap="sm">
+              <Text size="sm" weight="semibold">
                 {g}
               </Text>
-              <KeyValue items={rows.map((v) => ({ label: v.label, value: v.value, ...(v.tone && v.tone !== 'success' ? { tone: v.tone } : {}) }))} />
+              <Stack gap="xs">
+                {rows.map((v) => (
+                  <Row justify="between" gap="sm" align="center">
+                    <Text size="xs" muted truncate>
+                      {v.label}
+                    </Text>
+                    <Text size="sm" weight="semibold" tone={v.tone && v.tone !== 'success' ? v.tone : undefined}>
+                      {v.value}
+                    </Text>
+                  </Row>
+                ))}
+              </Stack>
             </Box>
           ))}
         </Grid>
