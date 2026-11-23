@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "fallow",
   "name": "Fallow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Unused files, exports and dependencies, duplication, circular imports and complexity hotspots for JavaScript and TypeScript, from Fallow.",
   "engines": {
     "orca": ">=1.4.259"
@@ -25,6 +25,11 @@
         "id": "fallow.run",
         "title": "Fallow: Run Analysis",
         "when": "workspace"
+      }
+    ],
+    "events": [
+      {
+        "on": "workspace.changed"
       }
     ],
     "settings": [

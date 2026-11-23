@@ -17,6 +17,10 @@ focused JavaScript or TypeScript workspace, inspired by the
   and does not commit.
 - **Status bar**: grade and issue count; press to run again.
 
+It runs again by itself when you switch workspace and a few seconds after you (or an agent) save a
+source file, a `package.json`, a `tsconfig` or the Fallow config. `node_modules`, `.git` and build
+output are ignored, and a save during a run is analysed right after it.
+
 ## Install
 
 ```sh

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { GRADE_TONE } from './grade'
 import { BATCH_COMMAND, batchPrompt, parse, parseFix, parseSecurity, PROMPT_MAX } from './parse'
+import { follow } from './follow'
 import type { Analysis, FixPlan, Suppression } from './protocol'
 
 // The version this plugin's parser was written against; npx fetches it once and caches it.
@@ -193,6 +194,7 @@ export async function deliverPrompt(
 }
 
 export default function activate(orca: OrcaWorkerApi): void {
+  stop()
   // The last run per workspace folder, in storage so it outlives the worker's idle restarts.
   const key = (path: string) => `last:${path}`
   const remembered = async (path: string) => (await orca.storage.get(key(path))) as Analysis | null
@@ -209,11 +211,31 @@ export default function activate(orca: OrcaWorkerApi): void {
 
   const none = (error: string): Analysis => ({ path: null, version: null, ranAt: null, elapsedMs: null, health: null, findings: [], security: null, error })
 
+  // Follows the focused workspace's files, so the findings and status bar stay current by themselves.
+  let watching = ''
+  let unfollow = () => {}
+  let again = false
+  function track(path: string) {
+    if (path === watching) return
+    unfollow()
+    watching = path
+    unfollow = follow(path, () => {
+      // A change while Fallow runs is analysed right after, not dropped.
+      if (running) again = true
+      else void run().catch(() => {})
+    })
+    stop = unfollow
+  }
+
   async function run(): Promise<Analysis> {
     const ws = await focused()
     if (!ws) return none('No workspace is focused.')
+    track(ws.path)
     // One run at a time: a second press while Fallow works waits for the same answer.
-    running ??= analyze(ws.path).finally(() => (running = null))
+    running ??= analyze(ws.path).finally(() => {
+      running = null
+      if (again) ((again = false), void run().catch(() => {}))
+    })
     const a = await running
     await orca.storage.set(key(ws.path), a)
     orca.panels.post('fallow.updated', a)
@@ -296,4 +318,24 @@ export default function activate(orca: OrcaWorkerApi): void {
     const a = await run()
     return a.error ?? statusOf(a).tooltip
   })
+
+  /** On a workspace switch: the remembered run at once (status bar included), then a fresh one. */
+  async function refocus() {
+    const ws = await focused()
+    if (!ws || ws.path === watching) return
+    const last = await remembered(ws.path)
+    if (last) {
+      orca.panels.post('fallow.updated', last)
+      await orca.host.call('statusBar.update', { id: 'fallow', visible: true, ...statusOf(last) }).catch(() => {})
+    }
+    await run()
+  }
+  // Also replays the focused workspace once on subscribe, which runs the first analysis.
+  orca.events.on('workspace.changed', () => void refocus().catch(() => {}))
+}
+
+// The file watcher of the running worker, closed when Orca stops it.
+let stop = () => {}
+export function deactivate() {
+  stop()
 }
